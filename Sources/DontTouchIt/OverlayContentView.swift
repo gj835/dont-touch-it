@@ -3,7 +3,7 @@ import AppKit
 @MainActor
 final class OverlayContentView: NSView {
     private let imageView = NSImageView()
-    private let messageLabel = NSTextField(labelWithString: "Don't touch it")
+    private let messageLabel = NSTextField(labelWithString: "Don't Touch It!")
     private var isTouchActive = false
     private var warningImage: NSImage?
 
@@ -83,7 +83,7 @@ final class OverlayContentView: NSView {
             } else {
                 imageView.image = nil
                 imageView.isHidden = true
-                messageLabel.stringValue = "Don't touch it"
+                messageLabel.stringValue = "Don't Touch It!"
                 messageLabel.textColor = .white
                 messageLabel.font = .systemFont(ofSize: 52, weight: .bold)
                 messageLabel.isHidden = false
