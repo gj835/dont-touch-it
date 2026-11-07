@@ -105,9 +105,8 @@ final class OverlayController {
 
     private func rebuildGuardWindows() {
         guard !guardWindows.isEmpty else { return }
-        let ignoresMouse = guardWindows.first?.ignoresMouseEvents ?? false
         guardWindows.forEach { $0.orderOut(nil) }
-        guardWindows = NSScreen.screens.map { makeGuardWindow(for: $0, ignoresMouseEvents: ignoresMouse) }
+        guardWindows = NSScreen.screens.map { makeGuardWindow(for: $0, ignoresMouseEvents: false) }
         TouchGuardLogger.shared.record("display configuration changed; overlay_count=\(guardWindows.count)")
         onStateChange?()
     }
@@ -147,7 +146,7 @@ final class OverlayController {
     private func recordRouting(_ type: CGEventType, event: CGEvent) {
         guard !guardWindows.isEmpty else { return }
         let overlayWindowNumbers = Set(guardWindows.map { Int64($0.windowNumber) })
-        let overlayIsOpaque = !(guardWindows.first?.ignoresMouseEvents ?? true)
+        let overlayIsOpaque = !(guardWindowUnderPointer()?.ignoresMouseEvents ?? true)
         routingStats.record(
             type,
             event: event,
@@ -164,7 +163,7 @@ final class OverlayController {
             return false
         }
 
-        let ignoresMouseBefore = guardWindows.first?.ignoresMouseEvents ?? false
+        let ignoresMouseBefore = guardWindowUnderPointer()?.ignoresMouseEvents ?? false
 
         switch type {
         case .leftMouseDown, .rightMouseDown, .otherMouseDown:
@@ -252,12 +251,48 @@ final class OverlayController {
         }
     }
 
+    /// Makes the overlay on the display under the pointer transparent to mouse
+    /// events (or restores every overlay). Overlays on other displays stay
+    /// touch-sensitive, so using the trackpad on the Mac does not open a gap
+    /// for touches on a Sidecar iPad.
     private func setGuardMouseTransparency(_ transparent: Bool) {
-        let previous = guardWindows.first?.ignoresMouseEvents
-        guardWindows.forEach { $0.ignoresMouseEvents = transparent }
-        if previous != transparent {
+        let pointerDisplays = transparent ? displayIDsUnderPointer() : []
+        var changed = false
+        for window in guardWindows {
+            let shouldIgnore: Bool
+            if !transparent {
+                shouldIgnore = false
+            } else if pointerDisplays.isEmpty {
+                // Pointer location unknown: fall back to passing input everywhere.
+                shouldIgnore = true
+            } else {
+                shouldIgnore = window.displayID.map(pointerDisplays.contains) ?? true
+            }
+            if window.ignoresMouseEvents != shouldIgnore {
+                window.ignoresMouseEvents = shouldIgnore
+                changed = true
+            }
+        }
+        if changed {
             passThroughToggles += 1
         }
+    }
+
+    private func displayIDsUnderPointer() -> Set<CGDirectDisplayID> {
+        guard let location = CGEvent(source: nil)?.location else { return [] }
+        var displays = [CGDirectDisplayID](repeating: 0, count: 8)
+        var count: UInt32 = 0
+        guard CGGetDisplaysWithPoint(location, UInt32(displays.count), &displays, &count) == .success else {
+            return []
+        }
+        return Set(displays.prefix(Int(count)))
+    }
+
+    private func guardWindowUnderPointer() -> TouchOverlayWindow? {
+        let pointerDisplays = displayIDsUnderPointer()
+        return guardWindows.first { window in
+            window.displayID.map(pointerDisplays.contains) ?? false
+        } ?? guardWindows.first
     }
 
     private func cancelTransparencyRestore() {
