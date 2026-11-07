@@ -22,11 +22,14 @@ final class MouseEventMonitor {
     }
 
     var onMouseEvent: ((CGEventType, CGEvent) -> Bool)?
-    /// Called for every original event the tap sees, before any queueing or replay.
+    /// Called for every event a listen-only tap sees after the system has decided
+    /// where to route it. Those events carry the window that will receive them.
     var onEventObserved: ((CGEventType, CGEvent) -> Void)?
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    private var routingTap: CFMachPort?
+    private var routingRunLoopSource: CFRunLoopSource?
     private var isMouseDownReplayPending = false
     private var latestDragWhileMouseDownPending: CGEvent?
     private var isScrollReplayPending = false
@@ -80,6 +83,26 @@ final class MouseEventMonitor {
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
 
+        // A second, listen-only tap placed after the system annotates events with
+        // their target window. It never changes events and is only used for the
+        // routing summary, so failing to create it is not an error.
+        if let observer = CGEvent.tapCreate(
+            tap: .cgAnnotatedSessionEventTap,
+            place: .headInsertEventTap,
+            options: .listenOnly,
+            eventsOfInterest: eventMask,
+            callback: routingTapCallback,
+            userInfo: context
+        ) {
+            let observerSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, observer, 0)
+            routingTap = observer
+            routingRunLoopSource = observerSource
+            CFRunLoopAddSource(CFRunLoopGetMain(), observerSource, .commonModes)
+            CGEvent.tapEnable(tap: observer, enable: true)
+        } else {
+            TouchGuardLogger.shared.record("routing observer tap unavailable")
+        }
+
         return nil
     }
 
@@ -89,6 +112,14 @@ final class MouseEventMonitor {
         if let runLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
         }
+        if let routingTap {
+            CGEvent.tapEnable(tap: routingTap, enable: false)
+        }
+        if let routingRunLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), routingRunLoopSource, .commonModes)
+        }
+        routingTap = nil
+        routingRunLoopSource = nil
         self.eventTap = nil
         runLoopSource = nil
         isMouseDownReplayPending = false
@@ -108,8 +139,13 @@ final class MouseEventMonitor {
         return onMouseEvent?(type, event) ?? false
     }
 
-    fileprivate func observe(_ type: CGEventType, event: CGEvent) {
-        guard type != .tapDisabledByTimeout, type != .tapDisabledByUserInput else { return }
+    fileprivate func observeRouted(_ type: CGEventType, event: CGEvent) {
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            if let routingTap {
+                CGEvent.tapEnable(tap: routingTap, enable: true)
+            }
+            return
+        }
         onEventObserved?(type, event)
     }
 
@@ -166,7 +202,6 @@ private func mouseEventTapCallback(
     }
 
     let monitor = Unmanaged<MouseEventMonitor>.fromOpaque(userInfo).takeUnretainedValue()
-    MainActor.assumeIsolated { monitor.observe(type, event: event) }
     if MainActor.assumeIsolated({ monitor.queueScrollWhileReplayPending(type, event: event) }) {
         return nil
     }
@@ -208,6 +243,20 @@ private func mouseEventTapCallback(
         }
     }
     return nil
+}
+
+/// Listen-only callback for the annotated session tap. Events are passed on untouched.
+private func routingTapCallback(
+    proxy: CGEventTapProxy,
+    type: CGEventType,
+    event: CGEvent,
+    userInfo: UnsafeMutableRawPointer?
+) -> Unmanaged<CGEvent>? {
+    if let userInfo {
+        let monitor = Unmanaged<MouseEventMonitor>.fromOpaque(userInfo).takeUnretainedValue()
+        MainActor.assumeIsolated { monitor.observeRouted(type, event: event) }
+    }
+    return Unmanaged.passUnretained(event)
 }
 
 private func isMouseDown(_ type: CGEventType) -> Bool {

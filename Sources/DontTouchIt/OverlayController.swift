@@ -15,6 +15,7 @@ final class OverlayController {
     private var lastPointerMenuUpdateTimestamp: UInt64 = 0
     private var screenParametersObserver: NSObjectProtocol?
     private var routingStats = InputRoutingStats()
+    private var passThroughToggles = 0
 
     var warningImage: NSImage? {
         didSet {
@@ -37,6 +38,7 @@ final class OverlayController {
         lastPointerMenuUpdateTimestamp = 0
         lastPointerEvent = "waiting"
         routingStats.reset()
+        passThroughToggles = 0
 
         TouchGuardLogger.shared.beginGuard(context: [
             "os=\(ProcessInfo.processInfo.operatingSystemVersionString)",
@@ -116,7 +118,9 @@ final class OverlayController {
             TouchGuardLogger.shared.record(
                 "stopping guard; touches=\(directTouchCount), pointer_events=\(pointerEventCount)"
             )
-            TouchGuardLogger.shared.record("routing summary: \(routingStats.summary)")
+            TouchGuardLogger.shared.record(
+                "routing summary: \(routingStats.summary) | pass_through_toggles=\(passThroughToggles)"
+            )
         }
         mouseEventMonitor.stop()
         if let screenParametersObserver {
@@ -143,7 +147,13 @@ final class OverlayController {
     private func recordRouting(_ type: CGEventType, event: CGEvent) {
         guard !guardWindows.isEmpty else { return }
         let overlayWindowNumbers = Set(guardWindows.map { Int64($0.windowNumber) })
-        routingStats.record(type, event: event, overlayWindowNumbers: overlayWindowNumbers)
+        let overlayIsOpaque = !(guardWindows.first?.ignoresMouseEvents ?? true)
+        routingStats.record(
+            type,
+            event: event,
+            overlayWindowNumbers: overlayWindowNumbers,
+            overlayIsOpaque: overlayIsOpaque
+        )
     }
 
     private func handleMouseEvent(_ type: CGEventType, event: CGEvent) -> Bool {
@@ -246,9 +256,7 @@ final class OverlayController {
         let previous = guardWindows.first?.ignoresMouseEvents
         guardWindows.forEach { $0.ignoresMouseEvents = transparent }
         if previous != transparent {
-            TouchGuardLogger.shared.record(
-                "overlay mouse pass-through \(transparent ? "enabled" : "disabled")"
-            )
+            passThroughToggles += 1
         }
     }
 
