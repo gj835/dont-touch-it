@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var guardMenuItem: NSMenuItem!
     private var pointerStatusMenuItem: NSMenuItem!
+    private var useDefaultWarningMenuItem: NSMenuItem!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if let imagePath = defaults.string(forKey: PreferenceKey.warningImagePath) {
@@ -42,12 +43,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let menu = NSMenu()
+        menu.autoenablesItems = false
 
         guardMenuItem = NSMenuItem(title: "Start Touch Guard", action: #selector(toggleTouchGuard), keyEquivalent: "g")
         guardMenuItem.target = self
         menu.addItem(guardMenuItem)
 
         menu.addItem(NSMenuItem(title: "Choose Warning Image…", action: #selector(chooseWarningImage), keyEquivalent: "i").configured(target: self))
+        useDefaultWarningMenuItem = NSMenuItem(title: "Use Default Warning", action: #selector(useDefaultWarning), keyEquivalent: "")
+        useDefaultWarningMenuItem.target = self
+        menu.addItem(useDefaultWarningMenuItem)
         menu.addItem(.separator())
 
         pointerStatusMenuItem = NSMenuItem(title: "Pointer events: idle", action: nil, keyEquivalent: "")
@@ -81,6 +86,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         defaults.set(url.path, forKey: PreferenceKey.warningImagePath)
         overlayController.warningImage = NSImage(contentsOf: url)
+        updateMenuState()
+    }
+
+    @objc private func useDefaultWarning() {
+        defaults.removeObject(forKey: PreferenceKey.warningImagePath)
+        overlayController.warningImage = nil
+        updateMenuState()
     }
 
     @objc private func revealTouchGuardLog() {
@@ -112,6 +124,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateMenuState() {
         guardMenuItem?.title = overlayController.isTouchGuardRunning ? "Stop Touch Guard" : "Start Touch Guard"
+        useDefaultWarningMenuItem?.isEnabled = overlayController.warningImage != nil
         if overlayController.isTouchGuardRunning {
             pointerStatusMenuItem?.title = "Pointer events: \(overlayController.pointerEventCount) (last: \(overlayController.lastPointerEvent))"
         } else {
