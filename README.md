@@ -21,6 +21,16 @@ open "dist/Don't Touch It.app"
 6. Verify that mouse and trackpad input still operates the underlying app while Touch Guard is active. The **Pointer events** counter should increase.
 7. Stop Touch Guard from the menu bar.
 
+## Verify mouse and trackpad input
+
+`Scripts/input-probe.swift` opens a window that stands in for the app underneath Touch Guard and shows which kinds of input it receives: pointer movement and hover, clicks, double and right clicks, drags, scrolling with momentum, pinch, rotate, smart zoom, swipe, and force click.
+
+```sh
+swift Scripts/input-probe.swift
+```
+
+Run it once with Touch Guard stopped to get a baseline, then again with Touch Guard started. Any row that turns green in the baseline but stays empty under Touch Guard is an input that the guard breaks. The cursor over the probe window should also be a crosshair in both runs.
+
 Touch Guard keeps its overlay touch-sensitive while idle. When a mouse or trackpad button or scroll event arrives, an Input Monitoring event tap briefly makes the overlay transparent to mouse events. It delays the initial event so the WindowServer can apply that change first; during the delay it keeps only the latest drag position or queues the initial scroll events. Subsequent drag and scroll events pass through the original stream without per-event replay delays. Trackpad gesture events (pinch, rotate, smart zoom, swipe, and pressure) are also watched: while they keep arriving, the overlay stays transparent for 400 ms after the last one, and the events themselves are not delayed or replayed. The app needs Input Monitoring and Accessibility (Post Event) permissions for this routing. Local builds use a stable code-signing identifier. Sidecar can validate AppKit direct-touch gesture recognition and mouse pass-through; it does not validate the built-in touchscreen's device or HID routing.
 
 Touch Guard's local diagnostic log is stored at `~/Library/Logs/Don't Touch It/TouchGuard.log`. It records permission checks, guard start/stop, per-session touch and pointer counts, and generic errors. It does not record individual touch times, pointer coordinates, application names, process or window IDs, window titles, screen contents, or typed input, and the app does not upload the log. The file is capped at 256 KiB; it is cleared and reused when the cap is reached. Older logs from the previous, more detailed format are cleared the first time this version opens the log. Use **Reveal Touch Guard Log…** to view it or **Clear Touch Guard Log…** to delete it.
