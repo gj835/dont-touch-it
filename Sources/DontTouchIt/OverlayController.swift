@@ -9,6 +9,7 @@ final class OverlayController {
     private var restoreMouseTransparencyTask: Task<Void, Never>?
     private var directTouchCount = 0
     private var lastPointerMenuUpdateTimestamp: UInt64 = 0
+    private var screenParametersObserver: NSObjectProtocol?
 
     var warningImage: NSImage? {
         didSet {
@@ -49,20 +50,54 @@ final class OverlayController {
         }
         TouchGuardLogger.shared.record("mouse event tap created at session level")
 
-        guardWindows = NSScreen.screens.map { screen in
-            let window = TouchOverlayWindow(screen: screen, ignoresMouseEvents: false)
-            window.content.showWarning(image: warningImage)
-            window.content.onTouchBegan = { [weak self] in
-                self?.directTouchCount += 1
-                self?.onStateChange?()
-            }
-            window.content.onTouchEnded = { [weak self] in
-                self?.onStateChange?()
-            }
-            window.orderFrontRegardless()
-            return window
+        guardWindows = NSScreen.screens.map { makeGuardWindow(for: $0, ignoresMouseEvents: false) }
+        screenParametersObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.rebuildGuardWindows() }
+        }
+        // The system may adjust a window's frame right after it is shown.
+        DispatchQueue.main.async { [weak self] in
+            self?.fitGuardWindowsToScreens()
         }
         TouchGuardLogger.shared.record("touch guard active; overlay_count=\(guardWindows.count)")
+        onStateChange?()
+    }
+
+    private func makeGuardWindow(for screen: NSScreen, ignoresMouseEvents: Bool) -> TouchOverlayWindow {
+        let window = TouchOverlayWindow(screen: screen, ignoresMouseEvents: ignoresMouseEvents)
+        window.content.showWarning(image: warningImage)
+        window.content.onTouchBegan = { [weak self] in
+            // Make sure the warning is centered on the visible display before it appears.
+            self?.fitGuardWindowsToScreens()
+            self?.directTouchCount += 1
+            self?.onStateChange?()
+        }
+        window.content.onTouchEnded = { [weak self] in
+            self?.onStateChange?()
+        }
+        window.orderFrontRegardless()
+        return window
+    }
+
+    private func fitGuardWindowsToScreens() {
+        var corrected = 0
+        for window in guardWindows where window.fitToScreen() {
+            corrected += 1
+        }
+        if corrected > 0 {
+            TouchGuardLogger.shared.record("overlay frame corrected; windows=\(corrected)")
+        }
+    }
+
+    private func rebuildGuardWindows() {
+        guard !guardWindows.isEmpty else { return }
+        let ignoresMouse = guardWindows.first?.ignoresMouseEvents ?? false
+        guardWindows.forEach { $0.orderOut(nil) }
+        guardWindows = NSScreen.screens.map { makeGuardWindow(for: $0, ignoresMouseEvents: ignoresMouse) }
+        TouchGuardLogger.shared.record("display configuration changed; overlay_count=\(guardWindows.count)")
         onStateChange?()
     }
 
@@ -74,6 +109,10 @@ final class OverlayController {
             )
         }
         mouseEventMonitor.stop()
+        if let screenParametersObserver {
+            NotificationCenter.default.removeObserver(screenParametersObserver)
+        }
+        screenParametersObserver = nil
         restoreMouseTransparencyTask?.cancel()
         restoreMouseTransparencyTask = nil
         pressedMouseButtons.removeAll()
