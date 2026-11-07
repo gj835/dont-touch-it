@@ -3,7 +3,11 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_NAME="Don't Touch It.app"
-APP_DIR="$ROOT_DIR/dist/$APP_NAME"
+# Defaults give the local debug build in dist/. Scripts/package-release.sh
+# overrides both to build a release app somewhere else.
+CONFIGURATION="${CONFIGURATION:-debug}"
+OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/dist}"
+APP_DIR="$OUTPUT_DIR/$APP_NAME"
 
 cd "$ROOT_DIR"
 export CLANG_MODULE_CACHE_PATH="$ROOT_DIR/.build/clang-module-cache"
@@ -13,11 +17,12 @@ swift build \
     --config-path "$ROOT_DIR/.build/swiftpm-config" \
     --security-path "$ROOT_DIR/.build/swiftpm-security" \
     --scratch-path "$ROOT_DIR/.build" \
+    --configuration "$CONFIGURATION" \
     --product DontTouchIt
 
 rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS"
-cp "$ROOT_DIR/.build/debug/DontTouchIt" "$APP_DIR/Contents/MacOS/DontTouchIt"
+cp "$ROOT_DIR/.build/$CONFIGURATION/DontTouchIt" "$APP_DIR/Contents/MacOS/DontTouchIt"
 
 cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
