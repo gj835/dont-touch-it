@@ -1,9 +1,10 @@
 import AppKit
 import CoreGraphics
 
-/// Gesture events are sparse compared with drags, and fingers can pause
-/// mid-gesture, so the overlay stays transparent a little longer after the last one.
-private let trackpadGestureLingerNanoseconds: UInt64 = 400_000_000
+/// While the overlay is transparent, touches on the screen reach the apps below,
+/// so this window is kept short. Raw trackpad contact events arrive continuously
+/// while fingers move, which covers pauses inside a gesture.
+private let trackpadGestureLingerNanoseconds: UInt64 = 150_000_000
 
 @MainActor
 final class OverlayController {
