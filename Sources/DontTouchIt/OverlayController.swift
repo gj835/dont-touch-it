@@ -14,6 +14,7 @@ final class OverlayController {
     private var directTouchCount = 0
     private var lastPointerMenuUpdateTimestamp: UInt64 = 0
     private var screenParametersObserver: NSObjectProtocol?
+    private var routingStats = InputRoutingStats()
 
     var warningImage: NSImage? {
         didSet {
@@ -35,6 +36,7 @@ final class OverlayController {
         directTouchCount = 0
         lastPointerMenuUpdateTimestamp = 0
         lastPointerEvent = "waiting"
+        routingStats.reset()
 
         TouchGuardLogger.shared.beginGuard(context: [
             "os=\(ProcessInfo.processInfo.operatingSystemVersionString)",
@@ -45,6 +47,9 @@ final class OverlayController {
 
         mouseEventMonitor.onMouseEvent = { [weak self] type, event in
             self?.handleMouseEvent(type, event: event) ?? false
+        }
+        mouseEventMonitor.onEventObserved = { [weak self] type, event in
+            self?.recordRouting(type, event: event)
         }
         if let failure = mouseEventMonitor.start() {
             TouchGuardLogger.shared.record("mouse event tap start failed: \(failure)")
@@ -111,6 +116,7 @@ final class OverlayController {
             TouchGuardLogger.shared.record(
                 "stopping guard; touches=\(directTouchCount), pointer_events=\(pointerEventCount)"
             )
+            TouchGuardLogger.shared.record("routing summary: \(routingStats.summary)")
         }
         mouseEventMonitor.stop()
         if let screenParametersObserver {
@@ -132,6 +138,12 @@ final class OverlayController {
 
     func stopAll() {
         stopTouchGuard()
+    }
+
+    private func recordRouting(_ type: CGEventType, event: CGEvent) {
+        guard !guardWindows.isEmpty else { return }
+        let overlayWindowNumbers = Set(guardWindows.map { Int64($0.windowNumber) })
+        routingStats.record(type, event: event, overlayWindowNumbers: overlayWindowNumbers)
     }
 
     private func handleMouseEvent(_ type: CGEventType, event: CGEvent) -> Bool {

@@ -22,6 +22,8 @@ final class MouseEventMonitor {
     }
 
     var onMouseEvent: ((CGEventType, CGEvent) -> Bool)?
+    /// Called for every original event the tap sees, before any queueing or replay.
+    var onEventObserved: ((CGEventType, CGEvent) -> Void)?
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
@@ -106,6 +108,11 @@ final class MouseEventMonitor {
         return onMouseEvent?(type, event) ?? false
     }
 
+    fileprivate func observe(_ type: CGEventType, event: CGEvent) {
+        guard type != .tapDisabledByTimeout, type != .tapDisabledByUserInput else { return }
+        onEventObserved?(type, event)
+    }
+
     fileprivate func beginMouseDownReplay() {
         isMouseDownReplayPending = true
         latestDragWhileMouseDownPending = nil
@@ -159,6 +166,7 @@ private func mouseEventTapCallback(
     }
 
     let monitor = Unmanaged<MouseEventMonitor>.fromOpaque(userInfo).takeUnretainedValue()
+    MainActor.assumeIsolated { monitor.observe(type, event: event) }
     if MainActor.assumeIsolated({ monitor.queueScrollWhileReplayPending(type, event: event) }) {
         return nil
     }
