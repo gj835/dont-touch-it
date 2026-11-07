@@ -17,6 +17,13 @@ final class OverlayController {
     private var screenParametersObserver: NSObjectProtocol?
     private var routingStats = InputRoutingStats()
     private var passThroughToggles = 0
+    private let touchScreenMonitor = TouchScreenMonitor()
+    private var usageStats = UsageSessionStats()
+    private var usageSessionStart: UInt64 = 0
+    private var isUsageSessionRecording = false
+
+    /// Opt-in. Takes effect the next time Touch Guard starts.
+    var usageDiagnosticsEnabled = false
 
     var warningImage: NSImage? {
         didSet {
@@ -75,7 +82,40 @@ final class OverlayController {
             self?.fitGuardWindowsToScreens()
         }
         TouchGuardLogger.shared.record("touch guard active; overlay_count=\(guardWindows.count)")
+        startUsageRecordingIfEnabled()
         onStateChange?()
+    }
+
+    private func startUsageRecordingIfEnabled() {
+        guard usageDiagnosticsEnabled else { return }
+        usageStats.reset()
+        usageSessionStart = DispatchTime.now().uptimeNanoseconds
+        isUsageSessionRecording = true
+        touchScreenMonitor.onContactBegan = { [weak self] isTouchScreen in
+            guard let self, self.isUsageSessionRecording else { return }
+            if isTouchScreen {
+                self.usageStats.touchScreenContact(
+                    at: DispatchTime.now().uptimeNanoseconds,
+                    overlayIsTransparent: self.guardWindows.first?.ignoresMouseEvents ?? false
+                )
+            } else {
+                self.usageStats.otherDigitizerContact()
+            }
+        }
+        touchScreenMonitor.start()
+        TouchGuardLogger.shared.record(
+            "usage env: \(UsageDiagnostics.environmentLine(digitizers: touchScreenMonitor.deviceDescriptions))"
+        )
+    }
+
+    private func finishUsageRecording() {
+        guard isUsageSessionRecording else { return }
+        isUsageSessionRecording = false
+        touchScreenMonitor.stop()
+        let elapsed = DispatchTime.now().uptimeNanoseconds - usageSessionStart
+        TouchGuardLogger.shared.record(
+            "usage summary: \(usageStats.summary(durationSeconds: Int(elapsed / 1_000_000_000)))"
+        )
     }
 
     private func makeGuardWindow(for screen: NSScreen, ignoresMouseEvents: Bool) -> TouchOverlayWindow {
@@ -85,6 +125,7 @@ final class OverlayController {
             // Make sure the warning is centered on the visible display before it appears.
             self?.fitGuardWindowsToScreens()
             self?.directTouchCount += 1
+            self?.usageStats.overlayTouchBegan()
             self?.onStateChange?()
         }
         window.content.onTouchEnded = { [weak self] in
@@ -122,6 +163,7 @@ final class OverlayController {
             TouchGuardLogger.shared.record(
                 "routing summary: \(routingStats.summary) | pass_through_toggles=\(passThroughToggles)"
             )
+            finishUsageRecording()
         }
         mouseEventMonitor.stop()
         if let screenParametersObserver {
@@ -147,6 +189,9 @@ final class OverlayController {
 
     private func recordRouting(_ type: CGEventType, event: CGEvent) {
         guard !guardWindows.isEmpty else { return }
+        if isUsageSessionRecording {
+            usageStats.pointerActivity(at: DispatchTime.now().uptimeNanoseconds)
+        }
         let overlayWindowNumbers = Set(guardWindows.map { Int64($0.windowNumber) })
         let overlayIsOpaque = !(guardWindows.first?.ignoresMouseEvents ?? true)
         routingStats.record(

@@ -10,8 +10,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var guardMenuItem: NSMenuItem!
     private var pointerStatusMenuItem: NSMenuItem!
     private var useDefaultWarningMenuItem: NSMenuItem!
+    private var usageDiagnosticsMenuItem: NSMenuItem!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        overlayController.usageDiagnosticsEnabled = defaults.bool(forKey: PreferenceKey.usageDiagnosticsEnabled)
         if let imagePath = defaults.string(forKey: PreferenceKey.warningImagePath) {
             overlayController.warningImage = NSImage(contentsOfFile: imagePath)
         }
@@ -58,6 +60,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pointerStatusMenuItem = NSMenuItem(title: "Pointer events: idle", action: nil, keyEquivalent: "")
         pointerStatusMenuItem.isEnabled = false
         menu.addItem(pointerStatusMenuItem)
+        usageDiagnosticsMenuItem = NSMenuItem(title: "Record Usage Diagnostics", action: #selector(toggleUsageDiagnostics), keyEquivalent: "")
+        usageDiagnosticsMenuItem.target = self
+        menu.addItem(usageDiagnosticsMenuItem)
         menu.addItem(NSMenuItem(title: "Reveal Touch Guard Log…", action: #selector(revealTouchGuardLog), keyEquivalent: "").configured(target: self))
         menu.addItem(NSMenuItem(title: "Clear Touch Guard Log…", action: #selector(clearTouchGuardLog), keyEquivalent: "").configured(target: self))
         menu.addItem(.separator())
@@ -95,6 +100,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateMenuState()
     }
 
+    @objc private func toggleUsageDiagnostics() {
+        if overlayController.usageDiagnosticsEnabled {
+            setUsageDiagnostics(enabled: false)
+            return
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "Record Usage Diagnostics?"
+        alert.informativeText = """
+            While Touch Guard runs, the local log will also record: your Mac model \
+            identifier, macOS version, number of displays, the type of any touch \
+            hardware, counts of touches and of mouse or trackpad activity, and how \
+            soon touches arrived after mouse or trackpad use.
+
+            It never records where you touch or click, what you type, or any window, \
+            app or file names. Nothing is sent anywhere. If you want to help improve \
+            the app, you can share the log yourself (Reveal Touch Guard Log…).
+
+            Takes effect the next time Touch Guard starts.
+            """
+        alert.addButton(withTitle: "Turn On")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        setUsageDiagnostics(enabled: true)
+    }
+
+    private func setUsageDiagnostics(enabled: Bool) {
+        defaults.set(enabled, forKey: PreferenceKey.usageDiagnosticsEnabled)
+        overlayController.usageDiagnosticsEnabled = enabled
+        updateMenuState()
+    }
+
     @objc private func revealTouchGuardLog() {
         TouchGuardLogger.shared.revealLogInFinder()
     }
@@ -125,6 +162,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func updateMenuState() {
         guardMenuItem?.title = overlayController.isTouchGuardRunning ? "Stop Touch Guard" : "Start Touch Guard"
         useDefaultWarningMenuItem?.isEnabled = overlayController.warningImage != nil
+        usageDiagnosticsMenuItem?.state = overlayController.usageDiagnosticsEnabled ? .on : .off
         if overlayController.isTouchGuardRunning {
             pointerStatusMenuItem?.title = "Pointer events: \(overlayController.pointerEventCount) (last: \(overlayController.lastPointerEvent))"
         } else {
@@ -196,4 +234,5 @@ private extension NSMenuItem {
 
 private enum PreferenceKey {
     static let warningImagePath = "warningImagePath"
+    static let usageDiagnosticsEnabled = "usageDiagnosticsEnabled"
 }
