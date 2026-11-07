@@ -10,7 +10,7 @@ final class OverlayContentView: NSView {
     var onTouchBegan: (() -> Void)?
     var onTouchEnded: (() -> Void)?
 
-    init(frame: NSRect) {
+    override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
