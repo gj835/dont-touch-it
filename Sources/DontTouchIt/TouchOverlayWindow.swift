@@ -9,7 +9,7 @@ extension NSScreen {
 @MainActor
 final class TouchOverlayWindow: NSPanel {
     let content: OverlayContentView
-    let displayID: CGDirectDisplayID?
+    private let displayID: CGDirectDisplayID?
 
     init(screen: NSScreen, ignoresMouseEvents: Bool) {
         self.content = OverlayContentView(frame: screen.frame)
