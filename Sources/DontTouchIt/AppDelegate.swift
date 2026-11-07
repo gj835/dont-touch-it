@@ -13,7 +13,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var usageDiagnosticsMenuItem: NSMenuItem!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        overlayController.usageDiagnosticsEnabled = defaults.bool(forKey: PreferenceKey.usageDiagnosticsEnabled)
+        // On by default while the app is in development; the menu item turns it off.
+        overlayController.usageDiagnosticsEnabled =
+            defaults.object(forKey: PreferenceKey.usageDiagnosticsEnabled) as? Bool ?? true
         if let imagePath = defaults.string(forKey: PreferenceKey.warningImagePath) {
             overlayController.warningImage = NSImage(contentsOfFile: imagePath)
         }
@@ -26,6 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         configureStatusItem()
+        presentUsageDiagnosticsNoticeIfNeeded()
         if !CGPreflightListenEventAccess() {
             presentInputMonitoringGuide()
         } else if !CGPreflightPostEventAccess() {
@@ -108,22 +111,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let alert = NSAlert()
         alert.messageText = "Record Usage Diagnostics?"
-        alert.informativeText = """
-            While Touch Guard runs, the local log will also record: your Mac model \
-            identifier, macOS version, number of displays, the type of any touch \
-            hardware, counts of touches and of mouse or trackpad activity, and how \
-            soon touches arrived after mouse or trackpad use.
-
-            It never records where you touch or click, what you type, or any window, \
-            app or file names. Nothing is sent anywhere. If you want to help improve \
-            the app, you can share the log yourself (Reveal Touch Guard Log…).
-
-            Takes effect the next time Touch Guard starts.
-            """
+        alert.informativeText = Self.usageDiagnosticsDescription + "\n\nTakes effect the next time Touch Guard starts."
         alert.addButton(withTitle: "Turn On")
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         setUsageDiagnostics(enabled: true)
+    }
+
+    private static let usageDiagnosticsDescription = """
+        While Touch Guard runs, the local log also records: your Mac model \
+        identifier, macOS version, number of displays, the type of any touch \
+        hardware, counts of touches and of mouse or trackpad activity, and how \
+        soon touches arrived after mouse or trackpad use.
+
+        It never records where you touch or click, what you type, or any window, \
+        app or file names. Nothing is sent anywhere. If you want to help improve \
+        the app, you can share the log yourself (Reveal Touch Guard Log…).
+        """
+
+    /// Diagnostics are on by default, so say so once, and offer to turn them off.
+    private func presentUsageDiagnosticsNoticeIfNeeded() {
+        guard !defaults.bool(forKey: PreferenceKey.usageDiagnosticsNoticeShown) else { return }
+        defaults.set(true, forKey: PreferenceKey.usageDiagnosticsNoticeShown)
+        guard overlayController.usageDiagnosticsEnabled else { return }
+
+        let alert = NSAlert()
+        alert.messageText = "Usage Diagnostics Are On"
+        alert.informativeText = Self.usageDiagnosticsDescription
+            + "\n\nYou can turn this off any time with Record Usage Diagnostics in the menu bar menu."
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Turn Off")
+        if alert.runModal() == .alertSecondButtonReturn {
+            setUsageDiagnostics(enabled: false)
+        }
     }
 
     private func setUsageDiagnostics(enabled: Bool) {
@@ -235,4 +255,5 @@ private extension NSMenuItem {
 private enum PreferenceKey {
     static let warningImagePath = "warningImagePath"
     static let usageDiagnosticsEnabled = "usageDiagnosticsEnabled"
+    static let usageDiagnosticsNoticeShown = "usageDiagnosticsNoticeShown"
 }

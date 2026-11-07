@@ -2,9 +2,10 @@ import AppKit
 import Foundation
 import IOKit.hid
 
-// Opt-in usage diagnostics. When enabled, each Touch Guard session adds a few
-// lines to the existing log so people running the app on touch-screen Macs can
-// share what happened without sharing anything personal.
+// Usage diagnostics, on by default and switchable off from the menu. When
+// enabled, each Touch Guard session adds a few lines to the existing log so
+// people running the app on touch-screen Macs can share what happened without
+// sharing anything personal.
 //
 // Only counts and hardware categories are recorded: no coordinates, window or
 // application names, process ids, key presses, or serial numbers. Nothing is

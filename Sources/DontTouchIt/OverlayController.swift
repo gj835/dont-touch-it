@@ -22,7 +22,7 @@ final class OverlayController {
     private var usageSessionStart: UInt64 = 0
     private var isUsageSessionRecording = false
 
-    /// Opt-in. Takes effect the next time Touch Guard starts.
+    /// Can be turned off by the user. Takes effect the next time Touch Guard starts.
     var usageDiagnosticsEnabled = false
 
     var warningImage: NSImage? {
