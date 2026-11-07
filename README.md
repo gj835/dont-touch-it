@@ -9,7 +9,26 @@ When Touch Guard is on, a finger touching the screen shows a full-screen warning
 - A MacBook Pro with a touch screen.
 - An iPad connected to a Mac with Sidecar.
 
-Requires macOS 27.
+Requires macOS 27 on an Apple silicon Mac.
+
+## Install
+
+1. Download the latest `DontTouchIt-<version>.zip` from the Releases page of this repository, and unzip it.
+2. Drag **Don't Touch It** into your Applications folder.
+3. Open it. The first time, macOS will refuse, because the app is not yet signed with an Apple Developer ID or notarized. Allow it once:
+   - Open **System Settings > Privacy & Security**, scroll down to the Security section, click **Open Anyway** next to Don't Touch It, and confirm.
+   - Or, in Terminal, remove the download mark and open it again:
+
+     ```sh
+     xattr -dr com.apple.quarantine "/Applications/Don't Touch It.app"
+     ```
+
+4. A hand icon appears in the menu bar. Allow the two permissions below, then quit and reopen the app.
+5. Choose **Start Touch Guard** from the menu bar icon. Choose it again to stop.
+
+Each release has a `.sha256` file next to the zip. To check your download, put both files in one folder and run `shasum -a 256 -c DontTouchIt-<version>.zip.sha256`.
+
+The exact wording of the macOS prompts may differ between macOS versions.
 
 ## Status: in development
 
@@ -36,14 +55,14 @@ Touch Guard needs two permissions. macOS asks for them, or you can add the app y
 
 After allowing them, quit and reopen the app. The app does not need Screen Recording, Camera, Microphone, Full Disk Access, or network access.
 
-## Build
+## Build from source
 
 ```sh
 ./Scripts/build-app.sh
 open "dist/Don't Touch It.app"
 ```
 
-Requires the Swift toolchain.
+Requires the Swift toolchain. `./Scripts/package-release.sh` builds a release app and a zip with a checksum in `dist/release/`.
 
 ## License
 
