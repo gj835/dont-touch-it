@@ -120,8 +120,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private static let usageDiagnosticsDescription = """
         While Touch Guard runs, the log on this Mac also saves usage counts: Mac \
-        model, macOS version, and touch and mouse activity. It never records where \
-        you touch, what you type, or app, window or file names. Nothing is uploaded.
+        model, macOS version, the kinds of input devices connected (no names), and \
+        touch and mouse activity. It never records where you touch, what you type, \
+        or app, window or file names. Nothing is uploaded.
         """
 
     /// Diagnostics are on by default, so say so once, and offer to turn them off.

@@ -106,15 +106,17 @@ final class OverlayController {
         TouchGuardLogger.shared.record(
             "usage env: \(UsageDiagnostics.environmentLine(digitizers: touchScreenMonitor.deviceDescriptions))"
         )
+        TouchGuardLogger.shared.record("usage hid devices: \(UsageDiagnostics.hidInventory())")
     }
 
     private func finishUsageRecording() {
         guard isUsageSessionRecording else { return }
         isUsageSessionRecording = false
         touchScreenMonitor.stop()
-        let elapsed = DispatchTime.now().uptimeNanoseconds - usageSessionStart
+        let now = DispatchTime.now().uptimeNanoseconds
+        usageStats.finish(at: now)
         TouchGuardLogger.shared.record(
-            "usage summary: \(usageStats.summary(durationSeconds: Int(elapsed / 1_000_000_000)))"
+            "usage summary: \(usageStats.summary(durationNanoseconds: now - usageSessionStart))"
         )
     }
 
@@ -303,6 +305,12 @@ final class OverlayController {
         guardWindows.forEach { $0.ignoresMouseEvents = transparent }
         if previous != transparent {
             passThroughToggles += 1
+            if isUsageSessionRecording {
+                usageStats.overlayTransparencyChanged(
+                    isTransparent: transparent,
+                    at: DispatchTime.now().uptimeNanoseconds
+                )
+            }
         }
     }
 

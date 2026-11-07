@@ -50,6 +50,13 @@ cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
+# Record which source revision this build came from, so a shared log shows it.
+GIT_REVISION="$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+if ! git -C "$ROOT_DIR" diff --quiet HEAD 2>/dev/null; then
+    GIT_REVISION="$GIT_REVISION-dirty"
+fi
+/usr/libexec/PlistBuddy -c "Add :DTIGitRevision string $GIT_REVISION" "$APP_DIR/Contents/Info.plist"
+
 # Keep the code-signing identifier stable so macOS TCC permissions continue to
 # identify rebuilt local app bundles as the same application.
 codesign --force --deep --sign - \

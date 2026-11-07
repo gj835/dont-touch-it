@@ -47,6 +47,8 @@ struct UsageSessionStats {
     private var contactsByRecency: [Recency: Int] = [:]
     private var lastPointerActivity: UInt64?
     private var lastContact: UInt64?
+    private var transparentSince: UInt64?
+    private var transparentNanoseconds: UInt64 = 0
 
     mutating func reset() {
         self = UsageSessionStats()
@@ -76,6 +78,22 @@ struct UsageSessionStats {
         overlayTouches += 1
     }
 
+    /// Tracks how long the overlay let pointer input through. Touches on the
+    /// screen during that time reach the apps underneath, so this is the exposure.
+    mutating func overlayTransparencyChanged(isTransparent: Bool, at now: UInt64) {
+        if isTransparent {
+            if transparentSince == nil { transparentSince = now }
+        } else if let since = transparentSince {
+            if now >= since { transparentNanoseconds += now - since }
+            transparentSince = nil
+        }
+    }
+
+    /// Closes an interval that is still open when the session ends.
+    mutating func finish(at now: UInt64) {
+        overlayTransparencyChanged(isTransparent: false, at: now)
+    }
+
     private func recency(at now: UInt64) -> Recency {
         guard let lastPointerActivity, now >= lastPointerActivity else { return .none }
         switch now - lastPointerActivity {
@@ -87,10 +105,15 @@ struct UsageSessionStats {
     }
 
     /// One line, for example:
-    /// `duration_s=84 hid_contacts=12 overlay_touches=11 contacts_while_transparent=1 other_digitizer_contacts=0 contact_after_pointer lt150ms=0 lt500ms=1 lt2s=0 ge2s=4 no_pointer=7`
-    func summary(durationSeconds: Int) -> String {
+    /// `duration_s=84 transparent_ms=9100 transparent_pct=10.8 hid_contacts=12 overlay_touches=11 contacts_while_transparent=1 other_digitizer_contacts=0 contact_after_pointer lt150ms=0 lt500ms=1 lt2s=0 ge2s=4 no_pointer=7`
+    func summary(durationNanoseconds: UInt64) -> String {
         let recencyParts = Recency.allCases.map { "\($0.label)=\(contactsByRecency[$0, default: 0])" }
-        return "duration_s=\(durationSeconds) hid_contacts=\(hidContacts) overlay_touches=\(overlayTouches) "
+        let transparentPercent = durationNanoseconds == 0
+            ? 0.0 : Double(transparentNanoseconds) * 100 / Double(durationNanoseconds)
+        return "duration_s=\(durationNanoseconds / 1_000_000_000) "
+            + "transparent_ms=\(transparentNanoseconds / 1_000_000) "
+            + "transparent_pct=\(String(format: "%.1f", transparentPercent)) "
+            + "hid_contacts=\(hidContacts) overlay_touches=\(overlayTouches) "
             + "contacts_while_transparent=\(contactsWhileTransparent) other_digitizer_contacts=\(otherDigitizerContacts) "
             + "contact_after_pointer \(recencyParts.joined(separator: " "))"
     }
@@ -201,12 +224,46 @@ enum UsageDiagnostics {
         return String(cString: buffer)
     }
 
+    /// App version and the source revision it was built from, for example
+    /// `0.1.0+3646b09` (`-dirty` when built with uncommitted changes).
+    static func appVersion() -> String {
+        let info = Bundle.main.infoDictionary
+        let version = (info?["CFBundleShortVersionString"] as? String) ?? "unknown"
+        let revision = (info?["DTIGitRevision"] as? String) ?? "unknown"
+        return "\(version)+\(revision)"
+    }
+
     /// One line describing the machine, for example
-    /// `model=Mac16,6 os=Version 27.2 displays=1 digitizers=[primary_usage=4 transport=USB]`.
+    /// `app=0.1.0+3646b09 model=Mac16,6 os=Version 27.2 displays=1 digitizers=[primary_usage=4 transport=USB]`.
     @MainActor
     static func environmentLine(digitizers: [String]) -> String {
         let list = digitizers.isEmpty ? "none" : digitizers.map { "[\($0)]" }.joined(separator: ",")
-        return "model=\(modelIdentifier()) os=\(ProcessInfo.processInfo.operatingSystemVersionString) "
+        return "app=\(appVersion()) model=\(modelIdentifier()) "
+            + "os=\(ProcessInfo.processInfo.operatingSystemVersionString) "
             + "displays=\(NSScreen.screens.count) digitizers=\(list)"
+    }
+
+    /// Every HID device on the Mac, counted by primary usage page, primary usage
+    /// and transport, for example `1.2.USB=1,1.6.USB=1,13.4.USB=1`. This shows how
+    /// a touch screen presents itself even if it is not a standard digitizer. No
+    /// product names, vendor ids, or serial numbers are included.
+    static func hidInventory() -> String {
+        let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+        IOHIDManagerSetDeviceMatching(manager, nil)
+        guard IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone)) == kIOReturnSuccess else {
+            return "unavailable"
+        }
+        defer { IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone)) }
+
+        let devices = (IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice>) ?? []
+        var counts: [String: Int] = [:]
+        for device in devices {
+            let page = (IOHIDDeviceGetProperty(device, kIOHIDPrimaryUsagePageKey as CFString) as? Int) ?? -1
+            let usage = (IOHIDDeviceGetProperty(device, kIOHIDPrimaryUsageKey as CFString) as? Int) ?? -1
+            let transport = (IOHIDDeviceGetProperty(device, kIOHIDTransportKey as CFString) as? String) ?? "unknown"
+            counts["\(page).\(usage).\(transport)", default: 0] += 1
+        }
+        return counts.isEmpty
+            ? "none" : counts.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: ",")
     }
 }
