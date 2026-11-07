@@ -2,10 +2,7 @@ import AppKit
 
 @MainActor
 final class OverlayContentView: NSView {
-    private let imageView = NSImageView()
     private let messageLabel = NSTextField(labelWithString: "Don't Touch It!")
-    private var isTouchActive = false
-    private var warningImage: NSImage?
 
     var onTouchBegan: (() -> Void)?
     var onTouchEnded: (() -> Void)?
@@ -15,11 +12,6 @@ final class OverlayContentView: NSView {
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
 
-        imageView.imageScaling = .scaleProportionallyUpOrDown
-        imageView.imageAlignment = .alignCenter
-        imageView.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(imageView)
-
         messageLabel.alignment = .center
         messageLabel.font = .systemFont(ofSize: 52, weight: .bold)
         messageLabel.textColor = .white
@@ -27,25 +19,16 @@ final class OverlayContentView: NSView {
         addSubview(messageLabel)
 
         NSLayoutConstraint.activate([
-            imageView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            imageView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            imageView.topAnchor.constraint(equalTo: topAnchor),
-            imageView.bottomAnchor.constraint(equalTo: bottomAnchor),
             messageLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
             messageLabel.centerYAnchor.constraint(equalTo: centerYAnchor)
         ])
 
         installTouchRecognizer()
-        setWarningVisible(false, image: nil)
+        setWarningVisible(false)
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
-    }
-
-    func showWarning(image: NSImage?) {
-        warningImage = image
-        setWarningVisible(isTouchActive, image: image)
     }
 
     private func installTouchRecognizer() {
@@ -60,40 +43,18 @@ final class OverlayContentView: NSView {
     @objc private func handlePress(_ recognizer: NSPressGestureRecognizer) {
         switch recognizer.state {
         case .began:
-            isTouchActive = true
-            setWarningVisible(true, image: warningImage)
+            setWarningVisible(true)
             onTouchBegan?()
         case .ended, .cancelled, .failed:
-            isTouchActive = false
-            setWarningVisible(false, image: nil)
+            setWarningVisible(false)
             onTouchEnded?()
         default:
             break
         }
     }
 
-    private func setWarningVisible(_ visible: Bool, image: NSImage?) {
-
-        if visible {
-            if let image {
-                imageView.image = image
-                imageView.isHidden = false
-                messageLabel.isHidden = true
-                layer?.backgroundColor = NSColor.black.cgColor
-            } else {
-                imageView.image = nil
-                imageView.isHidden = true
-                messageLabel.stringValue = "Don't Touch It!"
-                messageLabel.textColor = .white
-                messageLabel.font = .systemFont(ofSize: 52, weight: .bold)
-                messageLabel.isHidden = false
-                layer?.backgroundColor = NSColor.systemRed.cgColor
-            }
-        } else {
-            imageView.image = nil
-            imageView.isHidden = true
-            messageLabel.isHidden = true
-            layer?.backgroundColor = NSColor.clear.cgColor
-        }
+    private func setWarningVisible(_ visible: Bool) {
+        messageLabel.isHidden = !visible
+        layer?.backgroundColor = visible ? NSColor.systemRed.cgColor : NSColor.clear.cgColor
     }
 }

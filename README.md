@@ -2,7 +2,7 @@
 
 A macOS menu bar app that stops accidental touches on a touch screen.
 
-When Touch Guard is on, a finger touching the screen shows a full-screen warning (a red "Don't Touch It!" by default, or an image you choose) instead of reaching the app underneath. Mouse and trackpad input keeps working as usual.
+When Touch Guard is on, a finger touching the screen shows a full-screen warning (a red screen saying "Don't Touch It!") instead of reaching the app underneath. Mouse and trackpad input keeps working as usual.
 
 ## Supported devices
 

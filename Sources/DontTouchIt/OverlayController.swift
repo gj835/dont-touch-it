@@ -25,12 +25,6 @@ final class OverlayController {
     /// Can be turned off by the user. Takes effect the next time Touch Guard starts.
     var usageDiagnosticsEnabled = false
 
-    var warningImage: NSImage? {
-        didSet {
-            guardWindows.forEach { $0.content.showWarning(image: warningImage) }
-        }
-    }
-
     var onStateChange: (() -> Void)?
     var onError: ((MouseEventMonitor.StartFailure) -> Void)?
 
@@ -122,7 +116,6 @@ final class OverlayController {
 
     private func makeGuardWindow(for screen: NSScreen, ignoresMouseEvents: Bool) -> TouchOverlayWindow {
         let window = TouchOverlayWindow(screen: screen, ignoresMouseEvents: ignoresMouseEvents)
-        window.content.showWarning(image: warningImage)
         window.content.onTouchBegan = { [weak self] in
             // Make sure the warning is centered on the visible display before it appears.
             self?.fitGuardWindowsToScreens()

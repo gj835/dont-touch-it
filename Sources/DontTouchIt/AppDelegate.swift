@@ -1,6 +1,5 @@
 import AppKit
 import CoreGraphics
-import UniformTypeIdentifiers
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -9,16 +8,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var guardMenuItem: NSMenuItem!
     private var pointerStatusMenuItem: NSMenuItem!
-    private var useDefaultWarningMenuItem: NSMenuItem!
     private var usageDiagnosticsMenuItem: NSMenuItem!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // On by default while the app is in development; the menu item turns it off.
         overlayController.usageDiagnosticsEnabled =
             defaults.object(forKey: PreferenceKey.usageDiagnosticsEnabled) as? Bool ?? true
-        if let imagePath = defaults.string(forKey: PreferenceKey.warningImagePath) {
-            overlayController.warningImage = NSImage(contentsOfFile: imagePath)
-        }
+        // The warning image feature was removed; forget a path saved by older versions.
+        defaults.removeObject(forKey: PreferenceKey.legacyWarningImagePath)
 
         overlayController.onStateChange = { [weak self] in
             self?.updateMenuState()
@@ -54,10 +51,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guardMenuItem.target = self
         menu.addItem(guardMenuItem)
 
-        menu.addItem(NSMenuItem(title: "Choose Warning Image…", action: #selector(chooseWarningImage), keyEquivalent: "i").configured(target: self))
-        useDefaultWarningMenuItem = NSMenuItem(title: "Use Default Warning", action: #selector(useDefaultWarning), keyEquivalent: "")
-        useDefaultWarningMenuItem.target = self
-        menu.addItem(useDefaultWarningMenuItem)
         menu.addItem(.separator())
 
         pointerStatusMenuItem = NSMenuItem(title: "Pointer events: idle", action: nil, keyEquivalent: "")
@@ -81,25 +74,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             overlayController.startTouchGuard()
         }
-        updateMenuState()
-    }
-
-    @objc private func chooseWarningImage() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.image]
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Use Image"
-
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        defaults.set(url.path, forKey: PreferenceKey.warningImagePath)
-        overlayController.warningImage = NSImage(contentsOf: url)
-        updateMenuState()
-    }
-
-    @objc private func useDefaultWarning() {
-        defaults.removeObject(forKey: PreferenceKey.warningImagePath)
-        overlayController.warningImage = nil
         updateMenuState()
     }
 
@@ -181,7 +155,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateMenuState() {
         guardMenuItem?.title = overlayController.isTouchGuardRunning ? "Stop Touch Guard" : "Start Touch Guard"
-        useDefaultWarningMenuItem?.isEnabled = overlayController.warningImage != nil
         usageDiagnosticsMenuItem?.state = overlayController.usageDiagnosticsEnabled ? .on : .off
         if overlayController.isTouchGuardRunning {
             pointerStatusMenuItem?.title = "Pointer events: \(overlayController.pointerEventCount) (last: \(overlayController.lastPointerEvent))"
@@ -253,7 +226,7 @@ private extension NSMenuItem {
 }
 
 private enum PreferenceKey {
-    static let warningImagePath = "warningImagePath"
+    static let legacyWarningImagePath = "warningImagePath"
     static let usageDiagnosticsEnabled = "usageDiagnosticsEnabled"
     static let usageDiagnosticsNoticeShown = "usageDiagnosticsNoticeShown"
 }
