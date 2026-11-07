@@ -1,0 +1,210 @@
+import AppKit
+import CoreGraphics
+
+@MainActor
+final class OverlayController {
+    private var guardWindows: [TouchOverlayWindow] = []
+    private let mouseEventMonitor = MouseEventMonitor()
+    private var pressedMouseButtons: Set<Int64> = []
+    private var restoreMouseTransparencyTask: Task<Void, Never>?
+    private var directTouchCount = 0
+    private var lastPointerMenuUpdateTimestamp: UInt64 = 0
+
+    var warningImage: NSImage? {
+        didSet {
+            guardWindows.forEach { $0.content.showWarning(image: warningImage) }
+        }
+    }
+
+    var onStateChange: (() -> Void)?
+    var onError: ((MouseEventMonitor.StartFailure) -> Void)?
+
+    private(set) var pointerEventCount = 0
+    private(set) var lastPointerEvent = "none"
+
+    var isTouchGuardRunning: Bool { !guardWindows.isEmpty }
+
+    func startTouchGuard() {
+        stopTouchGuard()
+        pointerEventCount = 0
+        directTouchCount = 0
+        lastPointerMenuUpdateTimestamp = 0
+        lastPointerEvent = "waiting"
+
+        TouchGuardLogger.shared.beginGuard(context: [
+            "os=\(ProcessInfo.processInfo.operatingSystemVersionString)",
+            "input_monitoring=\(CGPreflightListenEventAccess())",
+            "post_event_access=\(CGPreflightPostEventAccess())"
+        ])
+        TouchGuardLogger.shared.record("mouse event tap starting")
+
+        mouseEventMonitor.onMouseEvent = { [weak self] type, event in
+            self?.handleMouseEvent(type, event: event) ?? false
+        }
+        if let failure = mouseEventMonitor.start() {
+            TouchGuardLogger.shared.record("mouse event tap start failed: \(failure)")
+            TouchGuardLogger.shared.endGuard(summary: "start failed: \(failure)")
+            onError?(failure)
+            return
+        }
+        TouchGuardLogger.shared.record("mouse event tap created at session level")
+
+        guardWindows = NSScreen.screens.map { screen in
+            let window = TouchOverlayWindow(screen: screen, ignoresMouseEvents: false)
+            window.content.showWarning(image: warningImage)
+            window.content.onTouchBegan = { [weak self] in
+                self?.directTouchCount += 1
+                self?.onStateChange?()
+            }
+            window.content.onTouchEnded = { [weak self] in
+                self?.onStateChange?()
+            }
+            window.orderFrontRegardless()
+            return window
+        }
+        TouchGuardLogger.shared.record("touch guard active; overlay_count=\(guardWindows.count)")
+        onStateChange?()
+    }
+
+    func stopTouchGuard() {
+        let wasActive = !guardWindows.isEmpty || mouseEventMonitor.isRunning
+        if wasActive {
+            TouchGuardLogger.shared.record(
+                "stopping guard; touches=\(directTouchCount), pointer_events=\(pointerEventCount)"
+            )
+        }
+        mouseEventMonitor.stop()
+        restoreMouseTransparencyTask?.cancel()
+        restoreMouseTransparencyTask = nil
+        pressedMouseButtons.removeAll()
+        guardWindows.forEach { $0.orderOut(nil) }
+        guardWindows.removeAll()
+        if wasActive {
+            TouchGuardLogger.shared.endGuard(
+                summary: "stopped normally; touches=\(directTouchCount), pointer_events=\(pointerEventCount)"
+            )
+        }
+        onStateChange?()
+    }
+
+    func stopAll() {
+        stopTouchGuard()
+    }
+
+    private func handleMouseEvent(_ type: CGEventType, event: CGEvent) -> Bool {
+        guard !guardWindows.isEmpty else { return false }
+
+        let ignoresMouseBefore = guardWindows.first?.ignoresMouseEvents ?? false
+
+        switch type {
+        case .leftMouseDown, .rightMouseDown, .otherMouseDown:
+            pressedMouseButtons.insert(event.getIntegerValueField(.mouseEventButtonNumber))
+            setGuardMouseTransparency(true)
+            cancelTransparencyRestore()
+
+        case .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
+            setGuardMouseTransparency(true)
+            if pressedMouseButtons.isEmpty {
+                scheduleTransparencyRestore()
+            } else {
+                cancelTransparencyRestore()
+                // The initial down event was replayed after the overlay became
+                // transparent. Let high-frequency drag events continue through
+                // the original event stream instead of delaying and reposting
+                // each one, which makes window movement visibly jittery.
+                return false
+            }
+
+        case .leftMouseUp, .rightMouseUp, .otherMouseUp:
+            let button = event.getIntegerValueField(.mouseEventButtonNumber)
+            pressedMouseButtons.remove(button)
+            setGuardMouseTransparency(true)
+            if pressedMouseButtons.isEmpty {
+                scheduleTransparencyRestore()
+            } else {
+                cancelTransparencyRestore()
+            }
+
+        case .scrollWheel:
+            setGuardMouseTransparency(true)
+            scheduleTransparencyRestore()
+            if ignoresMouseBefore {
+                pointerEventCount += 1
+                lastPointerEvent = "scroll"
+                if lastPointerMenuUpdateTimestamp == 0 ||
+                    event.timestamp - lastPointerMenuUpdateTimestamp >= 1_000_000_000 {
+                    lastPointerMenuUpdateTimestamp = event.timestamp
+                    onStateChange?()
+                }
+                return false
+            }
+
+        case .mouseMoved:
+            return false
+
+        default:
+            return false
+        }
+
+        if isPointerAction(type) {
+            pointerEventCount += 1
+            lastPointerEvent = eventDescription(type)
+            onStateChange?()
+        }
+        return true
+    }
+
+    private func setGuardMouseTransparency(_ transparent: Bool) {
+        let previous = guardWindows.first?.ignoresMouseEvents
+        guardWindows.forEach { $0.ignoresMouseEvents = transparent }
+        if previous != transparent {
+            TouchGuardLogger.shared.record(
+                "overlay mouse pass-through \(transparent ? "enabled" : "disabled")"
+            )
+        }
+    }
+
+    private func cancelTransparencyRestore() {
+        restoreMouseTransparencyTask?.cancel()
+        restoreMouseTransparencyTask = nil
+    }
+
+    private func scheduleTransparencyRestore() {
+        cancelTransparencyRestore()
+        restoreMouseTransparencyTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: 120_000_000)
+            } catch {
+                return
+            }
+            guard let self, self.pressedMouseButtons.isEmpty else { return }
+            self.setGuardMouseTransparency(false)
+            self.restoreMouseTransparencyTask = nil
+        }
+    }
+
+    private func isPointerAction(_ type: CGEventType) -> Bool {
+        switch type {
+        case .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp,
+             .otherMouseDown, .otherMouseUp, .leftMouseDragged, .rightMouseDragged,
+             .otherMouseDragged, .scrollWheel:
+            true
+        default:
+            false
+        }
+    }
+
+    private func eventDescription(_ type: CGEventType) -> String {
+        switch type {
+        case .leftMouseDown: "left down"
+        case .leftMouseUp: "left up"
+        case .rightMouseDown: "right down"
+        case .rightMouseUp: "right up"
+        case .otherMouseDown: "other down"
+        case .otherMouseUp: "other up"
+        case .scrollWheel: "scroll"
+        default: "pointer event"
+        }
+    }
+
+}
