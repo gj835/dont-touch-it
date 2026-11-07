@@ -119,14 +119,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private static let usageDiagnosticsDescription = """
-        While Touch Guard runs, the local log also records: your Mac model \
-        identifier, macOS version, number of displays, the type of any touch \
-        hardware, counts of touches and of mouse or trackpad activity, and how \
-        soon touches arrived after mouse or trackpad use.
-
-        It never records where you touch or click, what you type, or any window, \
-        app or file names. Nothing is sent anywhere. If you want to help improve \
-        the app, you can share the log yourself (Reveal Touch Guard Log…).
+        While Touch Guard runs, the log on this Mac also saves usage counts: Mac \
+        model, macOS version, and touch and mouse activity. It never records where \
+        you touch, what you type, or app, window or file names. Nothing is uploaded.
         """
 
     /// Diagnostics are on by default, so say so once, and offer to turn them off.
@@ -138,9 +133,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let alert = NSAlert()
         alert.messageText = "Usage Diagnostics Are On"
         alert.informativeText = Self.usageDiagnosticsDescription
-            + "\n\nYou can turn this off any time with Record Usage Diagnostics in the menu bar menu."
-        alert.addButton(withTitle: "OK")
-        alert.addButton(withTitle: "Turn Off")
+            + "\n\nTurn it off any time with Record Usage Diagnostics in the menu bar menu."
+        // The first button is the default one: blue, and triggered by Return.
+        let okButton = alert.addButton(withTitle: "OK")
+        okButton.keyEquivalent = "\r"
+        let turnOffButton = alert.addButton(withTitle: "Turn Off")
+        turnOffButton.keyEquivalent = ""
+        alert.window.initialFirstResponder = okButton
         if alert.runModal() == .alertSecondButtonReturn {
             setUsageDiagnostics(enabled: false)
         }
