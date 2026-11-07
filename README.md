@@ -15,11 +15,11 @@ Requires macOS 27.
 
 This app is still being developed, and it needs data from real touch-screen hardware to get better.
 
-While Touch Guard runs, the app records a few usage counts in a log file on your own Mac, for example how many touches the hardware reported, how many the app caught, and how soon touches followed mouse or trackpad use. The log does not contain where you touched or clicked, what you typed, or any window, app, or file names. It also records your Mac model and macOS version. The app never uploads anything.
+While Touch Guard runs, the app records a few usage counts in a log file on your own Mac, for example how many touches the hardware reported, how many the app caught, and how soon touches followed mouse or trackpad use. The log does not contain where you touched or clicked, what you typed, or any window, app, or file names. It also records the app version, your Mac model, your macOS version, and the kinds of input devices connected (types only, no device names). The app never uploads anything.
 
 This is on by default. A notice on first launch says so, and **Record Usage Diagnostics** in the menu bar menu turns it off.
 
-**Please share your log on GitHub.** Open an issue in this repository and paste the `usage env:` and `usage summary:` lines, or attach the log file. Read it first if you like; it is plain text.
+**Please share your log on GitHub.** Open an issue in this repository and paste the `usage env:`, `usage hid devices:` and `usage summary:` lines, or attach the log file. Read it first if you like; it is plain text.
 
 - Show the log: **Reveal Touch Guard Log…** in the menu bar menu.
 - Location: `~/Library/Logs/Don't Touch It/TouchGuard.log`
