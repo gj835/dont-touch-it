@@ -4,6 +4,15 @@ import CoreGraphics
 private let delayedRepostMarker: Int64 = 0x44544952
 private let mouseEventRepostDelayMilliseconds: Int = 30
 
+/// Trackpad gesture events (NSEventType raw values: rotate, gesture, magnify,
+/// swipe, smartMagnify, pressure). CGEventType does not name them, so they are
+/// listed by raw value. Begin/end gesture events are no longer delivered.
+let trackpadGestureEventTypes: [UInt32] = [18, 29, 30, 31, 32, 34]
+
+func isTrackpadGesture(_ type: CGEventType) -> Bool {
+    trackpadGestureEventTypes.contains(type.rawValue)
+}
+
 @MainActor
 final class MouseEventMonitor {
     enum StartFailure: Equatable {
@@ -46,6 +55,8 @@ final class MouseEventMonitor {
         ]
         let eventMask = eventTypes.reduce(CGEventMask(0)) { mask, type in
             mask | (CGEventMask(1) << type.rawValue)
+        } | trackpadGestureEventTypes.reduce(CGEventMask(0)) { mask, rawType in
+            mask | (CGEventMask(1) << rawType)
         }
 
         let context = Unmanaged.passUnretained(self).toOpaque()

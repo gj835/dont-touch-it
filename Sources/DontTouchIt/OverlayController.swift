@@ -1,6 +1,10 @@
 import AppKit
 import CoreGraphics
 
+/// Gesture events are sparse compared with drags, and fingers can pause
+/// mid-gesture, so the overlay stays transparent a little longer after the last one.
+private let trackpadGestureLingerNanoseconds: UInt64 = 400_000_000
+
 @MainActor
 final class OverlayController {
     private var guardWindows: [TouchOverlayWindow] = []
@@ -133,6 +137,11 @@ final class OverlayController {
     private func handleMouseEvent(_ type: CGEventType, event: CGEvent) -> Bool {
         guard !guardWindows.isEmpty else { return false }
 
+        if isTrackpadGesture(type) {
+            handleTrackpadGesture(type, event: event)
+            return false
+        }
+
         let ignoresMouseBefore = guardWindows.first?.ignoresMouseEvents ?? false
 
         switch type {
@@ -193,6 +202,34 @@ final class OverlayController {
         return true
     }
 
+    /// Pinch, rotate, smart zoom, swipe and pressure events are delivered to the
+    /// window under the pointer. While the overlay is touch-sensitive it would
+    /// swallow them, so keep it transparent for as long as gesture events keep
+    /// arriving. The events themselves pass through the original stream.
+    private func handleTrackpadGesture(_ type: CGEventType, event: CGEvent) {
+        setGuardMouseTransparency(true)
+        scheduleTransparencyRestore(after: trackpadGestureLingerNanoseconds)
+
+        guard let description = trackpadGestureDescription(type) else { return }
+        pointerEventCount += 1
+        lastPointerEvent = description
+        if lastPointerMenuUpdateTimestamp == 0 ||
+            event.timestamp - lastPointerMenuUpdateTimestamp >= 1_000_000_000 {
+            lastPointerMenuUpdateTimestamp = event.timestamp
+            onStateChange?()
+        }
+    }
+
+    private func trackpadGestureDescription(_ type: CGEventType) -> String? {
+        switch type.rawValue {
+        case 30: "pinch"
+        case 18: "rotate"
+        case 32: "smart zoom"
+        case 31: "swipe"
+        default: nil
+        }
+    }
+
     private func setGuardMouseTransparency(_ transparent: Bool) {
         let previous = guardWindows.first?.ignoresMouseEvents
         guardWindows.forEach { $0.ignoresMouseEvents = transparent }
@@ -208,11 +245,11 @@ final class OverlayController {
         restoreMouseTransparencyTask = nil
     }
 
-    private func scheduleTransparencyRestore() {
+    private func scheduleTransparencyRestore(after nanoseconds: UInt64 = 120_000_000) {
         cancelTransparencyRestore()
         restoreMouseTransparencyTask = Task { @MainActor [weak self] in
             do {
-                try await Task.sleep(nanoseconds: 120_000_000)
+                try await Task.sleep(nanoseconds: nanoseconds)
             } catch {
                 return
             }
